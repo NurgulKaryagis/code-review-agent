@@ -36,6 +36,31 @@ def get_pr_files(pr_url: str) -> list[dict]:
         ) from e
 
 
+def create_pr_comment(pr_url: str, file_name: str, line: int, body: str) -> dict:
+    g = Github(GITHUB_TOKEN, timeout=_TIMEOUT)
+    owner, repo_name, pull_number = _parse_pr_url(pr_url)
+
+    try:
+        repo = g.get_repo(f"{owner}/{repo_name}")
+        pr = repo.get_pull(pull_number)
+        commit = repo.get_commit(pr.head.sha)
+        pr.create_review_comment(
+            body=body,
+            commit=commit,
+            path=file_name,
+            line=line,
+        )
+        return {"status": "commented", "file_name": file_name, "line": line}
+    except RateLimitExceededException:
+        raise RuntimeError("GitHub API rate limit exceeded. Please wait before retrying.")
+    except UnknownObjectException:
+        raise RuntimeError(f"PR or file not found: {pr_url}, {file_name!r}.")
+    except GithubException as e:
+        raise RuntimeError(
+            f"GitHub API error ({e.status}): {e.data.get('message', str(e))}"
+        ) from e
+
+
 def apply_patch(pr_url: str, file_name: str, suggested_code: str) -> dict:
     g = Github(GITHUB_TOKEN, timeout=_TIMEOUT)
     owner, repo_name, pull_number = _parse_pr_url(pr_url)

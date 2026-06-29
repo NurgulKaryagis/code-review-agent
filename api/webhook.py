@@ -1,32 +1,46 @@
-import sys
-import os
+import hashlib
+import hmac
 import uuid
+from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from langgraph.types import Command
-from agent.graph import graph
 
+from agent.graph import graph
+from api.schemas import WebhookPayload
+from config.settings import WEBHOOK_SECRET
 
 router = APIRouter()
 
 
+async def _verify_github_signature(
+    request: Request,
+    x_hub_signature_256: Optional[str] = Header(None),
+) -> None:
+    if not WEBHOOK_SECRET:
+        return
+    if x_hub_signature_256 is None:
+        raise HTTPException(status_code=401, detail="Missing X-Hub-Signature-256 header")
+    body = await request.body()
+    expected = "sha256=" + hmac.new(
+        WEBHOOK_SECRET.encode(), body, hashlib.sha256
+    ).hexdigest()
+    if not hmac.compare_digest(expected, x_hub_signature_256):
+        raise HTTPException(status_code=401, detail="Invalid webhook signature")
+
+
 @router.post("/webhook")
-async def github_webhook(payload: dict):
-    # Only handle pull_request events
-    event_type = payload.get("action")
-    if "pull_request" not in payload:
-        raise HTTPException(status_code=400, detail="Not a pull_request event")
+async def github_webhook(
+    request: Request,
+    payload: WebhookPayload,
+    _: None = Depends(_verify_github_signature),
+):
+    if payload.action not in ("opened", "synchronize"):
+        return {"message": f"Ignored action: {payload.action}"}
 
-    # Only process opened or synchronize actions
-    if event_type not in ("opened", "synchronize"):
-        return {"message": f"Ignored action: {event_type}"}
+    pr_id = payload.pull_request.number
+    pr_url = str(payload.pull_request.html_url)
 
-    # Extract PR details from payload
-    pr = payload["pull_request"]
-    pr_id = pr["number"]
-    pr_url = pr["html_url"]
-
-    # Build initial state
     thread_id = str(uuid.uuid4())
     initial_state = {
         "pr_id": pr_id,
@@ -36,15 +50,12 @@ async def github_webhook(payload: dict):
     }
     config = {"configurable": {"thread_id": thread_id}}
 
-    # Invoke the graph
-    result = graph.invoke(initial_state, config=config)
+    result = await graph.ainvoke(initial_state, config=config)
 
     return {
-        "thread_id": config["configurable"]["thread_id"],
+        "thread_id": thread_id,
         "pr_id": pr_id,
         "pr_url": pr_url,
-        "suggestion_status": result.get("suggestion_status"),
-        "suggested_codes": result.get("suggested_codes"),
         "judge_scores": result.get("judge_scores"),
         "judge_status": result.get("judge_status"),
         "pr_review_steps": result.get("pr_review_steps"),
@@ -52,16 +63,16 @@ async def github_webhook(payload: dict):
 
 
 @router.post("/approve")
-async def approve_review(thread_id: str, approved: bool):
+async def approve_review(request: Request, thread_id: str, approved: bool):
     config = {"configurable": {"thread_id": thread_id}}
-    
-    result = graph.invoke(
+
+    result = await graph.ainvoke(
         Command(resume=approved),
-        config=config
+        config=config,
     )
-    
+
     return {
-        "patch_status": result.get("patch_status"),
+        "pr_result": result.get("pr_result"),
         "judge_scores": result.get("judge_scores"),
         "pr_review_steps": result.get("pr_review_steps"),
     }

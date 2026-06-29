@@ -2,7 +2,7 @@ import pytest
 from unittest.mock import MagicMock, patch, call
 from github import GithubException, UnknownObjectException, RateLimitExceededException
 
-from agent.tools.git_patch import get_pr_files, apply_patch
+from agent.tools.git_patch import apply_patch, create_pr_comment, get_pr_files
 
 
 def _make_github_mock(files=None, pr_ref="feature-branch", file_sha="abc123"):
@@ -120,3 +120,56 @@ class TestApplyPatch:
         with patch("agent.tools.git_patch.Github", return_value=mock_g):
             with pytest.raises(RuntimeError, match="not found"):
                 apply_patch("https://github.com/owner/repo/pull/1", "foo.py", "code")
+
+
+# ---------------------------------------------------------------------------
+# create_pr_comment
+# ---------------------------------------------------------------------------
+
+class TestCreatePrComment:
+    def test_calls_create_review_comment_with_correct_args(self):
+        mock_g, mock_repo, mock_pr, _ = _make_github_mock()
+        mock_commit = MagicMock()
+        mock_repo.get_commit.return_value = mock_commit
+
+        with patch("agent.tools.git_patch.Github", return_value=mock_g):
+            result = create_pr_comment(
+                "https://github.com/owner/repo/pull/7",
+                "foo.py",
+                42,
+                "This could be simplified",
+            )
+
+        mock_repo.get_commit.assert_called_once_with(mock_pr.head.sha)
+        mock_pr.create_review_comment.assert_called_once_with(
+            body="This could be simplified",
+            commit=mock_commit,
+            path="foo.py",
+            line=42,
+        )
+        assert result == {"status": "commented", "file_name": "foo.py", "line": 42}
+
+    def test_rate_limit_raises_runtime_error(self):
+        mock_g, mock_repo, mock_pr, _ = _make_github_mock()
+        mock_repo.get_commit.side_effect = RateLimitExceededException(403, {}, {})
+
+        with patch("agent.tools.git_patch.Github", return_value=mock_g):
+            with pytest.raises(RuntimeError, match="rate limit"):
+                create_pr_comment("https://github.com/owner/repo/pull/1", "foo.py", 1, "body")
+
+    def test_pr_not_found_raises_runtime_error(self):
+        mock_g, mock_repo, _, _ = _make_github_mock()
+        mock_repo.get_pull.side_effect = UnknownObjectException(404, {}, {})
+
+        with patch("agent.tools.git_patch.Github", return_value=mock_g):
+            with pytest.raises(RuntimeError, match="not found"):
+                create_pr_comment("https://github.com/owner/repo/pull/1", "foo.py", 1, "body")
+
+    def test_github_api_error_raises_runtime_error(self):
+        mock_g, mock_repo, mock_pr, _ = _make_github_mock()
+        mock_pr.create_review_comment.side_effect = GithubException(422, {"message": "invalid line"}, {})
+        mock_repo.get_commit.return_value = MagicMock()
+
+        with patch("agent.tools.git_patch.Github", return_value=mock_g):
+            with pytest.raises(RuntimeError, match="GitHub API error"):
+                create_pr_comment("https://github.com/owner/repo/pull/1", "foo.py", 1, "body")

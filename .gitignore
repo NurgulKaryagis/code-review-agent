@@ -42,3 +42,6 @@ htmlcov/
 # Logs
 *.log
 logs/
+
+# Claude Code
+CLAUDE.md

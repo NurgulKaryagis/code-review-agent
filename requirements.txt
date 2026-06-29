@@ -4,4 +4,7 @@ litellm
 pydantic
 python-dotenv
 PyGithub
+slowapi
+uvicorn
 pytest
+pytest-asyncio
