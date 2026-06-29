@@ -159,7 +159,7 @@ async def implementation_node(state: PRReviewState) -> dict:
     }
 
 
-async def test_agent_node(state: PRReviewState) -> dict:
+async def generate_tests_node(state: PRReviewState) -> dict:
     analyzed_codes = state["analyzed_codes"]
     implementation_result = state["implementation_result"]
 

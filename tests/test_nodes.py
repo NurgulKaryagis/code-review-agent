@@ -8,7 +8,7 @@ from agent.nodes import (
     review_node,
     security_agent_node,
     supervisor_node,
-    test_agent_node,
+    generate_tests_node,
 )
 
 PR_URL = "https://github.com/owner/repo/pull/1"
@@ -216,7 +216,7 @@ class TestImplementationNode:
 
 
 # ---------------------------------------------------------------------------
-# test_agent_node
+# generate_tests_node
 # ---------------------------------------------------------------------------
 
 class TestTestAgentNode:
@@ -230,7 +230,7 @@ class TestTestAgentNode:
     async def test_returns_test_code_and_broken_scenarios(self):
         llm_result = {"test_code": "def test_foo(): pass", "broken_scenario": "nothing breaks"}
         with patch("agent.nodes.call_llm_with_retry", new_callable=AsyncMock, return_value=llm_result):
-            result = await test_agent_node(self._state())
+            result = await generate_tests_node(self._state())
 
         assert len(result["test_code"]) == 1
         assert result["test_code"][0]["file_name"] == "foo.py"
@@ -240,13 +240,13 @@ class TestTestAgentNode:
     async def test_broken_scenario_mapped_to_correct_field(self):
         llm_result = {"test_code": "", "broken_scenario": "cache invalidated"}
         with patch("agent.nodes.call_llm_with_retry", new_callable=AsyncMock, return_value=llm_result):
-            result = await test_agent_node(self._state())
+            result = await generate_tests_node(self._state())
 
         assert result["broken_scenarios"][0]["scenario"] == "cache invalidated"
 
     async def test_step_message_appended(self):
         with patch("agent.nodes.call_llm_with_retry", new_callable=AsyncMock, return_value={"test_code": "", "broken_scenario": ""}):
-            result = await test_agent_node(self._state())
+            result = await generate_tests_node(self._state())
 
         assert any("Test agent" in step for step in result["pr_review_steps"])
 

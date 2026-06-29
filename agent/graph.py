@@ -6,7 +6,7 @@ from agent.nodes import (
     supervisor_node,
     code_analyst_node,
     implementation_node,
-    test_agent_node,
+    generate_tests_node,
     security_agent_node,
     review_node,
     judge_node,
@@ -25,7 +25,7 @@ builder = StateGraph(PRReviewState)
 builder.add_node("supervisor", supervisor_node)
 builder.add_node("code_analyst", code_analyst_node)
 builder.add_node("implementation", implementation_node)
-builder.add_node("test_agent", test_agent_node)
+builder.add_node("test_agent", generate_tests_node)
 builder.add_node("security_agent", security_agent_node)
 builder.add_node("review", review_node)
 builder.add_node("judge", judge_node)
